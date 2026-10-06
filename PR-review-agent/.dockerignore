@@ -1,0 +1,13 @@
+# Keep local credentials, generated state, and virtual environments out of build context.
+.git
+.env
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
+.mypy_cache
+data
+secrets/*
+!secrets/.gitkeep
+*.sqlite3
+*.db

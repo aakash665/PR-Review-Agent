@@ -1,0 +1,10 @@
+diff --git a/app/service.py b/app/service.py
+index 5e43211..a42c5b1 100644
+--- a/app/service.py
++++ b/app/service.py
+@@ -3,5 +3,5 @@
+ def find_user(connection: sqlite3.Connection, user_id: str):
+     cursor = connection.cursor()
+-    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
++    cursor.execute(f"SELECT * FROM users WHERE id = {user_id}")
+     return cursor.fetchone()

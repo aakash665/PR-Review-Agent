@@ -1,0 +1,18 @@
+# Keep local credentials, generated state, and build artifacts out of version control.
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+data/
+reports/
+/evaluation/reports/*.json
+/secrets/*
+!/secrets/.gitkeep
+*.sqlite3
+*.db
+*.egg-info/
+.DS_Store

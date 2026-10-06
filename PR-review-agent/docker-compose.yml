@@ -1,0 +1,83 @@
+services:
+  # HTTP intake and background processing share durable SQLite state.
+  api:
+    build: .
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_PATH: /data/reviews.sqlite3
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_PRIVATE_KEY_PATH: /run/secrets/github-app.pem
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-repository_chunks}
+      MAX_CONTEXT_TOKENS: ${MAX_CONTEXT_TOKENS:-12000}
+      TOP_K: ${TOP_K:-8}
+      CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.80}
+      SUMMARY_CONFIDENCE_THRESHOLD: ${SUMMARY_CONFIDENCE_THRESHOLD:-0.60}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      INDEX_SNAPSHOT_RETENTION: ${INDEX_SNAPSHOT_RETENTION:-20}
+      COST_PER_MILLION_TOKENS: ${COST_PER_MILLION_TOKENS:-}
+      WORKER_POLL_SECONDS: ${WORKER_POLL_SECONDS:-2}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - review_data:/data
+      - ./secrets:/run/secrets:ro
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["python", "-m", "app.worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_PATH: /data/reviews.sqlite3
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_PRIVATE_KEY_PATH: /run/secrets/github-app.pem
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-repository_chunks}
+      MAX_CONTEXT_TOKENS: ${MAX_CONTEXT_TOKENS:-12000}
+      TOP_K: ${TOP_K:-8}
+      CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.80}
+      SUMMARY_CONFIDENCE_THRESHOLD: ${SUMMARY_CONFIDENCE_THRESHOLD:-0.60}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      INDEX_SNAPSHOT_RETENTION: ${INDEX_SNAPSHOT_RETENTION:-20}
+      COST_PER_MILLION_TOKENS: ${COST_PER_MILLION_TOKENS:-}
+      WORKER_POLL_SECONDS: ${WORKER_POLL_SECONDS:-2}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - review_data:/data
+      - ./secrets:/run/secrets:ro
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.5
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  # Persist review state and vectors across container restarts.
+  review_data:
+  qdrant_data:

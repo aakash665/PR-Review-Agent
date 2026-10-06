@@ -1,0 +1,21 @@
+rules:
+  - id: python-eval
+    languages: [python]
+    message: Avoid evaluating dynamically supplied input.
+    severity: WARNING
+    pattern: eval($INPUT)
+  - id: python-shell-true
+    languages: [python]
+    message: Shell execution with shell=True can enable command injection.
+    severity: ERROR
+    pattern: subprocess.$FUNC(..., shell=True, ...)
+  - id: javascript-eval
+    languages: [javascript, typescript]
+    message: Avoid evaluating dynamically supplied input.
+    severity: WARNING
+    pattern: eval($INPUT)
+  - id: javascript-assignment-in-condition
+    languages: [javascript, typescript]
+    message: Assignment in a condition can grant access for the wrong role.
+    severity: ERROR
+    pattern: if ($OBJECT.$PROPERTY = $VALUE) { ... }

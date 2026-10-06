@@ -1,0 +1,11 @@
+{
+  "retrieval_targets": ["src/authorization.ts", "README.md", "src/auth.test.ts"],
+  "findings": [
+    {
+      "file_path": "src/auth.ts",
+      "line": 2,
+      "category": "bug",
+      "title": "Assignment in authorization check"
+    }
+  ]
+}

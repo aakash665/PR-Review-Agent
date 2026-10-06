@@ -1,0 +1,12 @@
+diff --git a/src/main/java/UserService.java b/src/main/java/UserService.java
+index 1337abc..beef123 100644
+--- a/src/main/java/UserService.java
++++ b/src/main/java/UserService.java
+@@ -1,5 +1,5 @@
+ public class UserService {
+     public User findUser(String userId) {
+-        return userRepository.findById(userId)
+-            .orElseThrow(() -> new UserNotFoundException(userId));
++        return userRepository.findById(userId).get();
+     }
+ }

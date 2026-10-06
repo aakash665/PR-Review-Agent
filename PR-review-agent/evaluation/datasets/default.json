@@ -1,0 +1,5 @@
+[
+  {"fixture": "../../fixtures/python_project"},
+  {"fixture": "../../fixtures/java_project"},
+  {"fixture": "../../fixtures/typescript_project"}
+]

@@ -1,0 +1,11 @@
+{
+  "retrieval_targets": ["src/main/java/SafeUserService.java", "README.md"],
+  "findings": [
+    {
+      "file_path": "src/main/java/UserService.java",
+      "line": 3,
+      "category": "bug",
+      "title": "Unhandled missing-user case"
+    }
+  ]
+}
