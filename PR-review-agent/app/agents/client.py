@@ -1,6 +1,7 @@
 """OpenRouter chat client with structured responses and bounded tool execution."""
 
 import asyncio
+import copy
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -126,7 +127,14 @@ class LLMClient:
             {
                 "model": model or self.settings.llm_model,
                 "messages": conversation,
-                "response_format": {"type": "json_object"},
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": _schema_name(response_model),
+                        "strict": True,
+                        "schema": _strict_json_schema(response_model),
+                    },
+                },
             }
         )
         choice = response.get("choices", [{}])[0]
@@ -186,3 +194,30 @@ class LLMClient:
 def _total_tokens(response: dict[str, Any]) -> int:
     """Sum token counts reported by the completion response."""
     return int(response.get("usage", {}).get("total_tokens", 0))
+
+
+def _schema_name(response_model: type[BaseModel]) -> str:
+    """Convert a Pydantic model name into a provider-safe schema identifier."""
+    return "".join(
+        character.lower() if character.isalnum() else "_" for character in response_model.__name__
+    )
+
+
+def _strict_json_schema(response_model: type[BaseModel]) -> dict[str, Any]:
+    """Build a strict JSON schema that requires every declared model property."""
+    schema = copy.deepcopy(response_model.model_json_schema())
+
+    def require_properties(node: Any) -> None:
+        if isinstance(node, dict):
+            properties = node.get("properties")
+            if isinstance(properties, dict):
+                node["required"] = list(properties)
+                node["additionalProperties"] = False
+            for value in node.values():
+                require_properties(value)
+        elif isinstance(node, list):
+            for value in node:
+                require_properties(value)
+
+    require_properties(schema)
+    return schema

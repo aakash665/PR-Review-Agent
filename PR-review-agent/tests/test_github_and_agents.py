@@ -182,11 +182,37 @@ def test_openrouter_chat_client_uses_configured_model_and_endpoint() -> None:
             observed.append(request)
             assert request.url.path == "/api/v1/chat/completions"
             assert request.headers["Authorization"] == "Bearer test-openrouter-key"
-            assert request.read()
+            payload = json.loads(request.read())
+            output_schema = payload["response_format"]["json_schema"]
+            assert payload["response_format"]["type"] == "json_schema"
+            assert output_schema["strict"] is True
+            finding_schema = output_schema["schema"]["$defs"]["ReviewFinding"]
+            assert {
+                "category",
+                "severity",
+                "confidence",
+                "file_path",
+                "line_start",
+                "line_end",
+            } <= set(finding_schema["required"])
+            assert finding_schema["additionalProperties"] is False
             return httpx.Response(
                 200,
                 json={
-                    "choices": [{"message": {"content": "{}"}}],
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "findings": [],
+                                        "summary": "No actionable defects found.",
+                                        "positive_changes": [],
+                                        "confidence": 0.9,
+                                    }
+                                )
+                            }
+                        }
+                    ],
                     "usage": {"total_tokens": 21},
                 },
             )
