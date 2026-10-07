@@ -215,7 +215,7 @@ class ReviewProcessor:
             findings=publishable,
             diff=diff,
         )
-        self.jobs.complete(job_id, findings, metrics)
+        self.jobs.complete(job_id, findings, metrics, summary=summary)
         logger.info(
             json.dumps(
                 {

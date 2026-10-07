@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS pull_requests (
     id INTEGER PRIMARY KEY,
     repository_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
     github_pr_number INTEGER NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    author TEXT NOT NULL DEFAULT '',
+    head_branch TEXT NOT NULL DEFAULT '',
     head_sha TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'queued',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -32,6 +35,7 @@ CREATE TABLE IF NOT EXISTS review_jobs (
     id INTEGER PRIMARY KEY,
     pull_request_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
     commit_sha TEXT NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'queued',
     attempts INTEGER NOT NULL DEFAULT 0,
     started_at TEXT,
@@ -102,6 +106,23 @@ class Database:
             }
             if "installation_id" not in columns:
                 connection.execute("ALTER TABLE repositories ADD COLUMN installation_id INTEGER")
+            pull_request_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(pull_requests)").fetchall()
+            }
+            for column in ("title", "author", "head_branch"):
+                if column not in pull_request_columns:
+                    connection.execute(
+                        f"ALTER TABLE pull_requests ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+                    )
+            job_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(review_jobs)").fetchall()
+            }
+            if "summary" not in job_columns:
+                connection.execute(
+                    "ALTER TABLE review_jobs ADD COLUMN summary TEXT NOT NULL DEFAULT ''"
+                )
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:

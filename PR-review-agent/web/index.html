@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#101521">
+    <meta name="description" content="Repository-aware GitHub pull request reviews">
+    <title>ReviewOps — GitHub PR Review Agent</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/" aria-label="ReviewOps home">
+          <span class="brand-mark">R</span>
+          <span><strong>ReviewOps</strong><small>AI code intelligence</small></span>
+        </a>
+        <div class="side-label">WORKSPACE</div>
+        <a class="nav-item active" href="#overview"><span class="nav-icon">▦</span> Overview</a>
+        <a class="nav-item" href="#repositories"><span class="nav-icon">⌘</span> Repositories</a>
+        <a class="nav-item" href="#reviews"><span class="nav-icon">⌁</span> PR reviews</a>
+        <div class="sidebar-footer">
+          <span class="pulse"></span>
+          <span><strong>Review service</strong><small id="service-status">Connecting…</small></span>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div>
+            <div class="eyebrow">DEVELOPER WORKSPACE <span>/</span> OVERVIEW</div>
+            <h1>Pull request reviews</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="button button-secondary" id="dashboard-access">Access key</button>
+            <span class="live-indicator"><span class="pulse"></span> Live updates</span>
+            <button class="button button-primary" id="add-repository-top">＋ Add repository</button>
+          </div>
+        </header>
+
+        <section class="welcome-panel">
+          <div>
+            <div class="eyebrow accent">REPOSITORY-AWARE CODE REVIEW</div>
+            <h2>Good code deserves a second set of eyes.</h2>
+            <p>Track GitHub pull requests, evidence-backed findings, and review progress in one place.</p>
+          </div>
+          <div class="welcome-art" aria-hidden="true"><span>{ }</span><i></i><b></b></div>
+        </section>
+
+        <section class="stats-grid" aria-label="Review statistics">
+          <article class="stat-card"><span class="stat-icon icon-blue">⌘</span><span class="stat-label">Repositories</span><strong id="stat-repositories">—</strong><small>Connected to this workspace</small></article>
+          <article class="stat-card"><span class="stat-icon icon-violet">⌁</span><span class="stat-label">Pull requests</span><strong id="stat-pulls">—</strong><small>Tracked from GitHub events</small></article>
+          <article class="stat-card"><span class="stat-icon icon-amber">◷</span><span class="stat-label">In progress</span><strong id="stat-running">—</strong><small>Queued or being analyzed</small></article>
+          <article class="stat-card"><span class="stat-icon icon-green">✓</span><span class="stat-label">Findings</span><strong id="stat-findings">—</strong><small>Validated across completed reviews</small></article>
+        </section>
+
+        <section class="content-section" id="repositories">
+          <div class="section-heading">
+            <div><div class="eyebrow">YOUR CODEBASES</div><h2>Repositories</h2></div>
+            <button class="button button-secondary" id="add-repository">＋ Connect repository</button>
+          </div>
+          <div class="repository-grid" id="repository-list" aria-live="polite"></div>
+        </section>
+
+        <section class="content-section reviews-section" id="reviews">
+          <div class="section-heading">
+            <div><div class="eyebrow">WEBHOOKS &amp; ON-DEMAND</div><h2>Recent reviews</h2></div>
+            <span class="refresh-label"><span class="pulse"></span> Refreshes automatically</span>
+          </div>
+          <div class="review-layout">
+            <div class="review-list" id="review-list" aria-live="polite"></div>
+            <aside class="review-detail" id="review-detail">
+              <div class="empty-detail"><span class="empty-icon">⌁</span><h3>Select a review</h3><p>Review status, evidence, and findings will appear here.</p></div>
+            </aside>
+          </div>
+        </section>
+
+        <footer>Evidence-grounded reviews <span>·</span> Updates every 5 seconds</footer>
+      </main>
+    </div>
+
+    <dialog id="repository-dialog">
+      <form id="repository-form">
+        <div class="dialog-heading"><div><div class="eyebrow">GITHUB APP INSTALLATION</div><h2>Connect a repository</h2></div><button class="icon-button" type="button" id="close-dialog" aria-label="Close">×</button></div>
+        <p class="dialog-copy">Enter the repository that your configured GitHub App can access. For example, <code>octocat/hello-world</code>.</p>
+        <label for="repository-name">GitHub repository</label>
+        <input id="repository-name" name="full_name" placeholder="owner/repository" pattern="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" required autocomplete="off">
+        <div class="form-error" id="form-error" role="alert"></div>
+        <div class="dialog-actions"><button class="button button-secondary" type="button" id="cancel-dialog">Cancel</button><button class="button button-primary" type="submit" id="submit-repository">Connect repository</button></div>
+      </form>
+    </dialog>
+    <dialog id="access-dialog">
+      <form id="access-form">
+        <div class="dialog-heading"><div><div class="eyebrow">PRIVATE WORKSPACE</div><h2>Dashboard access</h2></div><button class="icon-button" type="button" id="close-access" aria-label="Close">×</button></div>
+        <p class="dialog-copy">Enter the dashboard key configured by the service administrator. It is stored only in this browser.</p>
+        <label for="access-key">Dashboard API key</label>
+        <input id="access-key" type="password" autocomplete="current-password" required>
+        <div class="form-error" id="access-error" role="alert"></div>
+        <div class="dialog-actions"><button class="button button-primary" type="submit" id="submit-access">Unlock dashboard</button></div>
+      </form>
+    </dialog>
+    <div class="toast" id="toast" role="status"></div>
+  </body>
+</html>

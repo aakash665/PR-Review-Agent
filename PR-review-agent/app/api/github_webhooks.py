@@ -140,6 +140,9 @@ async def github_webhook(request: Request) -> dict[str, int | bool | str]:
             pr_number=payload.pull_request.number,
             head_sha=payload.pull_request.head.sha,
             installation_id=(payload.installation.id if payload.installation is not None else None),
+            title=payload.pull_request.title,
+            author=payload.pull_request.user.login,
+            head_branch=payload.pull_request.head.ref,
         )
     except (ValueError, KeyError) as error:
         raise HTTPException(

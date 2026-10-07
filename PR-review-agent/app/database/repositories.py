@@ -24,6 +24,9 @@ class JobRepository:
         pr_number: int,
         head_sha: str,
         installation_id: int | None = None,
+        title: str = "",
+        author: str = "",
+        head_branch: str = "",
     ) -> tuple[int, bool]:
         """Upsert repository and pull-request state, then enqueue the requested head commit."""
         with self.database.connect() as connection:
@@ -42,11 +45,13 @@ class JobRepository:
             ).fetchone()
             assert repository is not None
             connection.execute(
-                """INSERT INTO pull_requests(repository_id, github_pr_number, head_sha)
-                   VALUES (?, ?, ?)
+                """INSERT INTO pull_requests(
+                   repository_id, github_pr_number, title, author, head_branch, head_sha
+                   ) VALUES (?, ?, ?, ?, ?, ?)
                    ON CONFLICT(repository_id, github_pr_number) DO UPDATE SET
+                   title=excluded.title, author=excluded.author, head_branch=excluded.head_branch,
                    head_sha=excluded.head_sha, updated_at=CURRENT_TIMESTAMP""",
-                (repository["id"], pr_number, head_sha),
+                (repository["id"], pr_number, title, author, head_branch, head_sha),
             )
             pull_request = connection.execute(
                 "SELECT id FROM pull_requests WHERE repository_id = ? AND github_pr_number = ?",
@@ -139,6 +144,49 @@ class JobRepository:
                 (github_repo_id, owner, name, default_branch, installation_id),
             )
 
+    def list_repositories(self) -> list[dict[str, object]]:
+        """Return repositories and aggregate pull-request/review counts for the dashboard."""
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """SELECT r.id, r.github_repo_id, r.owner, r.name, r.default_branch,
+                          r.last_indexed_sha, r.created_at, r.updated_at,
+                          COUNT(DISTINCT p.id) AS pull_requests,
+                          COUNT(DISTINCT j.id) AS reviews
+                   FROM repositories r LEFT JOIN pull_requests p ON p.repository_id=r.id
+                   LEFT JOIN review_jobs j ON j.pull_request_id=p.id
+                   GROUP BY r.id ORDER BY r.updated_at DESC"""
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_reviews(self, *, limit: int = 100, offset: int = 0) -> dict[str, object]:
+        """Return recent review jobs and total count for dashboard polling."""
+        with self.database.connect() as connection:
+            total = int(connection.execute("SELECT COUNT(*) FROM review_jobs").fetchone()[0])
+            rows = connection.execute(
+                """SELECT j.id, j.commit_sha, j.status, j.attempts, j.error, j.created_at,
+                          j.completed_at, p.github_pr_number, p.title, p.author, p.head_branch,
+                          r.github_repo_id, r.owner, r.name,
+                          (SELECT COUNT(*) FROM findings f WHERE f.review_job_id=j.id)
+                              AS finding_count
+                   FROM review_jobs j JOIN pull_requests p ON p.id=j.pull_request_id
+                   JOIN repositories r ON r.id=p.repository_id
+                   ORDER BY j.created_at DESC LIMIT ? OFFSET ?""",
+                (limit, offset),
+            ).fetchall()
+        return {"items": [dict(row) for row in rows], "total": total}
+
+    def repository(self, repository_id: int) -> sqlite3.Row | None:
+        """Return one registered repository by its local database identifier."""
+        with self.database.connect() as connection:
+            return cast(
+                sqlite3.Row | None,
+                connection.execute(
+                    """SELECT id, github_repo_id, owner, name, default_branch, installation_id
+                       FROM repositories WHERE id=?""",
+                    (repository_id,),
+                ).fetchone(),
+            )
+
     def claim_next(self, max_attempts: int) -> sqlite3.Row | None:
         """Atomically lease the next eligible queued review job."""
         return self._claim(max_attempts)
@@ -226,13 +274,15 @@ class JobRepository:
         job_id: int,
         findings: list[ReviewFinding],
         metrics: dict[str, float | int | None] | None = None,
+        *,
+        summary: str = "",
     ) -> None:
         """Persist successful job findings and optional run metrics atomically."""
         with self.database.connect() as connection:
             cursor = connection.execute(
-                """UPDATE review_jobs SET status='completed',
+                """UPDATE review_jobs SET status='completed', summary=?,
                    completed_at=CURRENT_TIMESTAMP WHERE id=? AND status='running'""",
-                (job_id,),
+                (summary, job_id),
             )
             if cursor.rowcount == 0:
                 return
@@ -325,6 +375,7 @@ class JobRepository:
             ).fetchall()
             metric_rows = connection.execute("SELECT * FROM review_metrics").fetchall()
             findings = connection.execute("SELECT COUNT(*) FROM findings").fetchone()
+            pull_requests = connection.execute("SELECT COUNT(*) FROM pull_requests").fetchone()
         metrics = {
             key: sum(float(row[key]) for row in metric_rows)
             for key in ("tokens_used", "number_of_findings", "number_of_rejected_findings")
@@ -332,6 +383,7 @@ class JobRepository:
         return {
             **{row["status"]: int(row["count"]) for row in jobs},
             "findings": int(findings[0]),
+            "pull_requests": int(pull_requests[0]),
             **metrics,
         }
 
@@ -384,8 +436,10 @@ class JobRepository:
         """Return a serialized job status with findings and available metrics."""
         with self.database.connect() as connection:
             job = connection.execute(
-                """SELECT j.id, j.commit_sha, j.status, j.attempts, j.error, j.created_at,
-                          j.completed_at, p.github_pr_number, r.owner, r.name
+                """SELECT j.id, j.commit_sha, j.status, j.summary, j.attempts, j.error,
+                          j.created_at,
+                          j.completed_at, p.github_pr_number, p.title, p.author, p.head_branch,
+                          r.github_repo_id, r.owner, r.name
                    FROM review_jobs j JOIN pull_requests p ON p.id=j.pull_request_id
                    JOIN repositories r ON r.id=p.repository_id WHERE j.id=?""",
                 (job_id,),

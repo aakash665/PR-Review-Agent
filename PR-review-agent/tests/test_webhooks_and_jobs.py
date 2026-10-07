@@ -93,6 +93,9 @@ def test_webhook_validates_then_enqueues_supported_actions(monkeypatch: pytest.M
         assert accepted.json() == {"accepted": True, "queued": True, "job_id": 12}
         assert application.state.jobs.calls[0]["installation_id"] == 999
         assert application.state.jobs.calls[0]["head_sha"] == "123456789abcdef"
+        assert application.state.jobs.calls[0]["title"] == "Update service"
+        assert application.state.jobs.calls[0]["author"] == "contributor"
+        assert application.state.jobs.calls[0]["head_branch"] == "feature"
         ignored_body = _payload(action="closed")
         ignored = client.post(
             "/webhooks/github",

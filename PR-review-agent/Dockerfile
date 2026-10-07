@@ -10,6 +10,7 @@ COPY pyproject.toml README.md ./
 COPY app ./app
 COPY evaluation ./evaluation
 COPY fixtures ./fixtures
+COPY web ./web
 RUN pip install --no-cache-dir .
 
 RUN useradd --create-home --uid 10001 agent \
