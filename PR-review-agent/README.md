@@ -108,6 +108,7 @@ See [.env.example](./.env.example). Important settings:
 
 | Variable | Purpose |
 | --- | --- |
+| `DATABASE_PATH` | SQLite database file; defaults to `/tmp/reviews.sqlite3` on Vercel and `data/reviews.sqlite3` elsewhere |
 | `GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY_PATH` | GitHub App authentication |
 | `GITHUB_WEBHOOK_SECRET` | Webhook HMAC verification |
 | `DASHBOARD_API_KEY` | Bearer key required for dashboard data and management APIs |
@@ -142,6 +143,7 @@ Retrieval filters by repository **and exact commit SHA** before Qdrant vector se
 - API credentials are read from environment-backed settings; tokens and source contents are not included in structured completion logs.
 - Qdrant and the API/worker should be deployed on a private network with TLS and network policies in production. Protect operational read endpoints at the deployment boundary.
 - The SQLite worker queue uses transactional job claiming and is suitable for local/small deployments. For higher concurrency, replace the queue/persistence layer with a shared production database and add worker-level repository locks.
+- On Vercel, the default SQLite path uses `/tmp` so the read-only deployment filesystem does not prevent the app from starting. Vercel's temporary filesystem is not durable, and Vercel functions do not run the separate polling worker; use persistent database storage and a separately hosted worker for functioning webhook-driven PR reviews.
 - The default index model retains a bounded set of commit snapshots per repository. Large repositories and very large PRs are subject to explicit archive, file, diff, context, and API pagination limits.
 
 ## Tests and evaluation

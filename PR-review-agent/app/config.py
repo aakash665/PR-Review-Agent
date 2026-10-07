@@ -1,10 +1,18 @@
 """Validated application settings loaded from environment variables and .env files."""
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _default_database_path() -> Path:
+    """Use Vercel's writable temporary directory when no database path is configured."""
+    if os.getenv("VERCEL") == "1":
+        return Path("/tmp/reviews.sqlite3")
+    return Path("data/reviews.sqlite3")
 
 
 class Settings(BaseSettings):
@@ -13,7 +21,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_env: str = "development"
-    database_path: Path = Path("data/reviews.sqlite3")
+    database_path: Path = Field(default_factory=_default_database_path)
     github_app_id: str | None = None
     github_private_key_path: Path | None = None
     github_webhook_secret: SecretStr | None = None
