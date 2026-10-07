@@ -1,15 +1,19 @@
 """Tests for GitHub API behavior, review tools, and agent validation."""
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
 import httpx
+from pydantic import SecretStr
 from qdrant_client import QdrantClient
 
+from app.agents.client import LLMClient
+from app.agents.decisions_client import DecisionsClient
 from app.agents.review_agent import ReviewAgent, ReviewResponse
 from app.agents.tools import ReviewToolbox
-from app.agents.verifier_agent import VerificationBatch, VerificationItem, VerifierAgent
+from app.agents.verifier_agent import VerifierAgent
 from app.analysis.diff_analyzer import DiffAnalysis, DiffAnalyzer
 from app.config import Settings
 from app.github.client import GitHubClient
@@ -70,21 +74,18 @@ class FakeLLM:
                 ),
                 123,
             )
-        if schema is VerificationBatch:
-            return (
-                VerificationBatch(
-                    decisions=[
-                        VerificationItem(
-                            index=0,
-                            accepted=True,
-                            confidence=0.9,
-                            reason="Diff and retrieved code support the claim.",
-                        )
-                    ]
-                ),
-                45,
-            )
         raise AssertionError(f"Unexpected response model: {schema}")
+
+
+class FakeDecisions:
+    def __init__(self, probability: float = 0.9) -> None:
+        self.probability = probability
+
+    async def assess_findings(
+        self, state: dict[str, Any], indices: list[int]
+    ) -> tuple[dict[int, float], int]:
+        assert state["repository_context_is_untrusted"] is True
+        return {index: self.probability for index in indices}, 45
 
 
 async def _fixture_pipeline() -> tuple[
@@ -153,7 +154,7 @@ def test_review_agent_filters_locations_and_verifier_accepts_evidence() -> None:
             assert result.findings[0].line_start == 5
             assert result.retrieved_chunks > 0
             assert "<UNTRUSTED_REPOSITORY_CONTEXT>" in result.retrieved_context
-            accepted, tokens = await VerifierAgent(FakeLLM()).verify(
+            accepted, tokens = await VerifierAgent(FakeDecisions()).verify(
                 result.findings,
                 context=result.retrieved_context,
                 diff=diff,
@@ -161,8 +162,82 @@ def test_review_agent_filters_locations_and_verifier_accepts_evidence() -> None:
             assert len(accepted) == 1
             assert accepted[0].verified is True
             assert tokens == 45
+            rejected, _ = await VerifierAgent(FakeDecisions(0.79), minimum_probability=0.8).verify(
+                result.findings,
+                context=result.retrieved_context,
+                diff=diff,
+            )
+            assert rejected == []
         finally:
             client.close()
+
+    asyncio.run(run())
+
+
+def test_openrouter_chat_client_uses_configured_model_and_endpoint() -> None:
+    async def run() -> None:
+        observed: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            observed.append(request)
+            assert request.url.path == "/api/v1/chat/completions"
+            assert request.headers["Authorization"] == "Bearer test-openrouter-key"
+            assert request.read()
+            return httpx.Response(
+                200,
+                json={
+                    "choices": [{"message": {"content": "{}"}}],
+                    "usage": {"total_tokens": 21},
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as http:
+            settings = Settings.model_construct(
+                openrouter_api_key=SecretStr("test-openrouter-key"),
+                llm_model="vendor/chat-model",
+            )
+            _, tokens = await LLMClient(settings, http_client=http).complete(
+                system="Review",
+                user="Changed code",
+                response_model=ReviewResponse,
+            )
+        assert tokens == 21
+        assert json.loads(observed[0].content)["model"] == "vendor/chat-model"
+
+    asyncio.run(run())
+
+
+def test_openrouter_decisions_api_returns_validated_probabilities() -> None:
+    async def run() -> None:
+        observed: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            observed.append(request)
+            assert request.url.path == "/api/alpha/decisions"
+            assert request.headers["Authorization"] == "Bearer test-openrouter-key"
+            return httpx.Response(
+                200,
+                json={
+                    "answers": {
+                        "finding_2": {"noul": 0.93},
+                        "finding_4": {"noul": 0.18},
+                    },
+                    "usage": {"total_tokens": 12},
+                },
+            )
+
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as http:
+            settings = Settings.model_construct(openrouter_api_key=SecretStr("test-openrouter-key"))
+            probabilities, tokens = await DecisionsClient(
+                settings, http_client=http
+            ).assess_findings({"candidate_findings": []}, [2, 4])
+        assert probabilities == {2: 0.93, 4: 0.18}
+        assert tokens == 12
+        request_payload = json.loads(observed[0].content)
+        assert request_payload["model"] == "openai/gpt-6-luna-decisions"
+        assert set(request_payload["questions"]) == {"finding_2", "finding_4"}
 
     asyncio.run(run())
 

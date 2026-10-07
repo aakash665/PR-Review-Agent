@@ -1,35 +1,27 @@
-"""Independent validation of candidate review findings."""
+"""Independent candidate verification using OpenRouter calibrated probabilities."""
 
-import json
+from typing import Any
 
-from pydantic import BaseModel, Field
-
-from app.agents.client import LLMClient
-from app.agents.prompts import VERIFICATION_SYSTEM_PROMPT, verification_prompt
+from app.agents.decisions_client import DecisionsClient
 from app.analysis.diff_analyzer import DiffAnalysis
 from app.models.review import ReviewFinding
 
-
-class VerificationItem(BaseModel):
-    """Verifier decision for one candidate finding, identified by its input index."""
-
-    index: int = Field(ge=0)
-    accepted: bool
-    confidence: float = Field(ge=0, le=1)
-    reason: str = Field(min_length=1, max_length=2000)
-
-
-class VerificationBatch(BaseModel):
-    """Structured batch of independent verifier decisions."""
-
-    decisions: list[VerificationItem] = Field(default_factory=list)
+MAX_FINDINGS_PER_DECISION_REQUEST = 8
 
 
 class VerifierAgent:
-    """Ask an independent model pass to confirm or reject candidate findings."""
+    """Accept only evidence-grounded candidates with a sufficiently high yes probability."""
 
-    def __init__(self, llm: LLMClient) -> None:
-        self.llm = llm
+    def __init__(
+        self,
+        decisions: DecisionsClient,
+        *,
+        minimum_probability: float = 0.8,
+    ) -> None:
+        if not 0 <= minimum_probability <= 1:
+            raise ValueError("minimum verification probability must be between zero and one")
+        self.decisions = decisions
+        self.minimum_probability = minimum_probability
 
     async def verify(
         self,
@@ -38,9 +30,7 @@ class VerifierAgent:
         context: str,
         diff: DiffAnalysis,
     ) -> tuple[list[ReviewFinding], int]:
-        """Verify findings against the diff and context, preserving only accepted evidence."""
-        if not findings:
-            return [], 0
+        """Verify findings in bounded batches and preserve only supported added-line issues."""
         valid_added_lines = {
             file.file_path: {
                 line.line for line in file.changed_lines if line.change_type == "added"
@@ -52,38 +42,33 @@ class VerifierAgent:
             for index, finding in enumerate(findings)
             if finding.line_start in valid_added_lines.get(finding.file_path, set())
         ]
-        if not eligible:
-            return [], 0
-        output, tokens = await self.llm.complete(
-            system=VERIFICATION_SYSTEM_PROMPT,
-            user=(
-                f"{verification_prompt()}\n\nCandidates:\n"
-                + json.dumps(
-                    [{"index": index, **finding.model_dump()} for index, finding in eligible],
-                    ensure_ascii=True,
-                )
-                + f"\n\nUNTRUSTED REPOSITORY CONTEXT:\n{context}"
-            ),
-            response_model=VerificationBatch,
-        )
         accepted: list[ReviewFinding] = []
-        seen: set[int] = set()
-        eligible_indices = {index for index, _ in eligible}
-        for decision in output.decisions:
-            if (
-                decision.index not in eligible_indices
-                or decision.index in seen
-                or not decision.accepted
-            ):
-                continue
-            seen.add(decision.index)
-            finding = findings[decision.index]
-            accepted.append(
-                finding.model_copy(
-                    update={
-                        "confidence": min(finding.confidence, decision.confidence),
-                        "verified": True,
-                    }
-                )
-            )
+        tokens = 0
+        for start in range(0, len(eligible), MAX_FINDINGS_PER_DECISION_REQUEST):
+            batch = eligible[start : start + MAX_FINDINGS_PER_DECISION_REQUEST]
+            indices = [index for index, _ in batch]
+            added_lines = {
+                path: sorted(lines) for path, lines in valid_added_lines.items() if lines
+            }
+            state: dict[str, Any] = {
+                "candidate_findings": [
+                    {"index": index, **finding.model_dump()} for index, finding in batch
+                ],
+                "added_diff_lines": added_lines,
+                "retrieved_repository_context": context,
+                "repository_context_is_untrusted": True,
+            }
+            probabilities, batch_tokens = await self.decisions.assess_findings(state, indices)
+            tokens += batch_tokens
+            for index, finding in batch:
+                probability = probabilities[index]
+                if probability >= self.minimum_probability:
+                    accepted.append(
+                        finding.model_copy(
+                            update={
+                                "confidence": min(finding.confidence, probability),
+                                "verified": True,
+                            }
+                        )
+                    )
         return accepted, tokens

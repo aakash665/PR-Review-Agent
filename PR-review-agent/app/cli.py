@@ -13,6 +13,7 @@ from typing import Any
 from qdrant_client import QdrantClient
 
 from app.agents.client import LLMClient
+from app.agents.decisions_client import DecisionsClient
 from app.agents.review_agent import ReviewAgent
 from app.agents.verifier_agent import VerifierAgent
 from app.analysis.diff_analyzer import DiffAnalyzer
@@ -27,7 +28,7 @@ from app.ingestion.indexer import RepositoryIndexer
 from app.ingestion.repository_loader import GitHubRepositoryLoader
 from app.models.review import PullRequestMetadata, ReviewFinding
 from app.retrieval.context_builder import ContextBuilder
-from app.retrieval.embeddings import LocalFeatureEmbeddingProvider, OpenAIEmbeddingProvider
+from app.retrieval.embeddings import LocalFeatureEmbeddingProvider, OpenRouterEmbeddingProvider
 from app.retrieval.retriever import HybridRetriever
 from app.retrieval.vector_store import QdrantVectorStore
 from app.review.confidence import filter_by_confidence
@@ -120,9 +121,9 @@ async def run_fixture(root: Path, settings: Settings, *, require_llm: bool = Fal
             author="fixture",
             files=diff.files,
         )
-        if settings.openai_api_key is None:
+        if settings.openrouter_api_key is None:
             if require_llm:
-                raise ValueError("OPENAI_API_KEY is required to run AI fixture evaluation")
+                raise ValueError("OPENROUTER_API_KEY is required to run AI fixture evaluation")
             return FixtureRun(
                 findings=[],
                 retrieved_paths={item.file_path for item in retrieved},
@@ -140,7 +141,10 @@ async def run_fixture(root: Path, settings: Settings, *, require_llm: bool = Fal
             repository_files=repository_files,
             static_findings=static_findings,
         )
-        verified, _ = await VerifierAgent(llm).verify(
+        verified, _ = await VerifierAgent(
+            DecisionsClient(settings),
+            minimum_probability=settings.verification_threshold,
+        ).verify(
             review.findings,
             context=review.retrieved_context,
             diff=diff,
@@ -182,7 +186,7 @@ async def _index_repository(owner: str, repo: str, commit: str | None, settings:
             settings.qdrant_url, settings.qdrant_collection, settings.embedding_dimensions
         )
         indexer = RepositoryIndexer(
-            CodeChunker(), OpenAIEmbeddingProvider(settings, database), vectors
+            CodeChunker(), OpenRouterEmbeddingProvider(settings, database), vectors
         )
         count = await indexer.index_files(
             repository=str(repository["id"]),
@@ -245,8 +249,8 @@ async def _review_pull_request(owner: str, repo: str, number: int, settings: Set
 
 async def _evaluate(dataset: Path, settings: Settings) -> None:
     """Run fixture evaluations and write aggregate quality metrics."""
-    if settings.openai_api_key is None:
-        raise ValueError("OPENAI_API_KEY is required for AI evaluation")
+    if settings.openrouter_api_key is None:
+        raise ValueError("OPENROUTER_API_KEY is required for AI evaluation")
     with dataset.open(encoding="utf-8") as file:
         fixtures = json.load(file)
     reports = []
@@ -333,7 +337,9 @@ async def _dispatch(arguments: argparse.Namespace, settings: Settings) -> None:
                     f"({finding.file_path}:{finding.line_start}, {finding.confidence:.0%})"
                 )
         else:
-            print("AI review skipped: set OPENAI_API_KEY to run the review and verifier agents.")
+            print(
+                "AI review skipped: set OPENROUTER_API_KEY to run the review and verifier agents."
+            )
             print("RAG indexing, vector retrieval, and static analysis completed.")
     elif arguments.command == "evaluate":
         await _evaluate(arguments.dataset, settings)

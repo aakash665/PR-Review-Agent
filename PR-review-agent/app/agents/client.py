@@ -1,8 +1,10 @@
-"""OpenAI-compatible chat client with structured responses and bounded tool execution."""
+"""OpenRouter chat client with structured responses and bounded tool execution."""
 
 import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any, TypeVar, cast
 
 import httpx
@@ -14,6 +16,21 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 
+@asynccontextmanager
+async def _http_client(
+    client: httpx.AsyncClient | None,
+    timeout: httpx.Timeout,
+    default_headers: dict[str, str],
+) -> AsyncIterator[httpx.AsyncClient]:
+    """Yield an injected HTTP client or a request-scoped client."""
+    if client is not None:
+        client.headers.update(default_headers)
+        yield client
+    else:
+        async with httpx.AsyncClient(timeout=timeout, headers=default_headers) as owned_client:
+            yield owned_client
+
+
 class LLMError(RuntimeError):
     """Raised when the configured language-model service returns an unusable response."""
 
@@ -23,11 +40,17 @@ class LLMError(RuntimeError):
 class LLMClient:
     """Asynchronous client for structured chat completions and controlled tool calls."""
 
-    def __init__(self, settings: Settings) -> None:
-        if settings.openai_api_key is None:
-            raise ValueError("OPENAI_API_KEY is required for LLM review")
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        http_client: httpx.AsyncClient | None = None,
+    ) -> None:
+        if settings.openrouter_api_key is None:
+            raise ValueError("OPENROUTER_API_KEY is required for LLM review")
         self.settings = settings
-        self.api_key = settings.openai_api_key.get_secret_value()
+        self.api_key = settings.openrouter_api_key.get_secret_value()
+        self.http_client = http_client
 
     async def complete(
         self,
@@ -39,7 +62,7 @@ class LLMClient:
         tools: list[dict[str, Any]] | None = None,
         messages: list[dict[str, Any]] | None = None,
     ) -> tuple[T, int]:
-        """Persist successful job findings and optional run metrics atomically."""
+        """Validate a chat completion against the requested Pydantic response schema."""
         conversation = messages or [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -122,9 +145,11 @@ class LLMClient:
         """Send a chat-completion request and normalize transport or response errors."""
         timeout = httpx.Timeout(90, connect=10)
         for attempt in range(4):
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with _http_client(
+                self.http_client, timeout, self._attribution_headers()
+            ) as client:
                 response = await client.post(
-                    f"{self.settings.openai_base_url.rstrip('/')}/chat/completions",
+                    f"{self.settings.openrouter_base_url.rstrip('/')}/api/v1/chat/completions",
                     headers={"Authorization": f"Bearer {self.api_key}"},
                     json=payload,
                 )
@@ -142,6 +167,13 @@ class LLMClient:
                 raise LLMError(f"LLM API returned HTTP {response.status_code}")
             await asyncio.sleep(min(2**attempt, 20))
         raise LLMError("LLM retry loop exited unexpectedly")
+
+    def _attribution_headers(self) -> dict[str, str]:
+        """Return optional application attribution headers supported by OpenRouter."""
+        headers = {"X-OpenRouter-Title": self.settings.openrouter_app_name}
+        if self.settings.openrouter_site_url:
+            headers["HTTP-Referer"] = self.settings.openrouter_site_url
+        return headers
 
     @staticmethod
     async def _execute_tool(name: str, arguments: str) -> object:

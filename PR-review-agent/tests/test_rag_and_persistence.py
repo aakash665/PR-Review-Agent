@@ -1,16 +1,20 @@
 """Tests for repository indexing, retrieval, context safety, and persistence."""
 
 import asyncio
+import json
 
+import httpx
+from pydantic import SecretStr
 from qdrant_client import QdrantClient
 
 from app.analysis.diff_analyzer import DiffAnalysis
+from app.config import Settings
 from app.database.repositories import JobRepository
 from app.database.session import Database
 from app.ingestion.chunker import CodeChunker
 from app.ingestion.indexer import RepositoryIndexer
 from app.retrieval.context_builder import ContextBuilder
-from app.retrieval.embeddings import LocalFeatureEmbeddingProvider
+from app.retrieval.embeddings import LocalFeatureEmbeddingProvider, OpenRouterEmbeddingProvider
 from app.retrieval.retriever import HybridRetriever, RetrievedContext
 from app.retrieval.vector_store import QdrantVectorStore
 
@@ -140,3 +144,37 @@ def test_index_snapshot_retention_and_review_job_state(tmp_path) -> None:
     assert jobs.record_indexed_sha(1, "sha-3", 2) == ["sha-1"]
     state = jobs.repository_state(1)
     assert state is not None and state["last_indexed_sha"] == "sha-3"
+
+
+def test_openrouter_embedding_provider_uses_openrouter_and_caches_vectors(tmp_path) -> None:
+    async def run() -> None:
+        database = Database(tmp_path / "embeddings.sqlite3")
+        database.initialize()
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            assert request.url.path == "/api/v1/embeddings"
+            assert request.headers["Authorization"] == "Bearer test-openrouter-key"
+            payload = json.loads(request.read())
+            assert payload["model"] == "openai/text-embedding-3-small"
+            assert payload["dimensions"] == 3
+            return httpx.Response(
+                200,
+                json={
+                    "data": [{"embedding": [0.1, 0.2, 0.3]}],
+                    "usage": {"total_tokens": 4},
+                },
+            )
+
+        settings = Settings.model_construct(
+            openrouter_api_key=SecretStr("test-openrouter-key"),
+            embedding_dimensions=3,
+        )
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            provider = OpenRouterEmbeddingProvider(settings, database, http_client=http)
+            assert await provider.embed(["candidate"]) == [[0.1, 0.2, 0.3]]
+            assert await provider.embed(["candidate"]) == [[0.1, 0.2, 0.3]]
+        assert len(requests) == 1
+
+    asyncio.run(run())

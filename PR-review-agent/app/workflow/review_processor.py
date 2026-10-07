@@ -7,6 +7,7 @@ import time
 from typing import Any
 
 from app.agents.client import LLMClient
+from app.agents.decisions_client import DecisionsClient
 from app.agents.review_agent import ReviewAgent
 from app.agents.summarizer_agent import SummarizerAgent
 from app.agents.verifier_agent import VerifierAgent
@@ -21,7 +22,7 @@ from app.ingestion.indexer import RepositoryIndexer
 from app.ingestion.repository_loader import GitHubRepositoryLoader
 from app.models.review import PullRequestMetadata, ReviewFinding
 from app.retrieval.context_builder import ContextBuilder
-from app.retrieval.embeddings import OpenAIEmbeddingProvider
+from app.retrieval.embeddings import OpenRouterEmbeddingProvider
 from app.retrieval.retriever import HybridRetriever
 from app.retrieval.vector_store import QdrantVectorStore
 from app.review.confidence import filter_by_confidence
@@ -66,7 +67,7 @@ class ReviewProcessor:
             raise ValueError("Review job does not have a GitHub App installation ID")
         installation_id = int(installation_id)
         llm = LLMClient(self.settings)
-        embeddings = OpenAIEmbeddingProvider(self.settings, self.database)
+        embeddings = OpenRouterEmbeddingProvider(self.settings, self.database)
         retriever = HybridRetriever(embeddings, self.vectors, top_k=self.settings.top_k)
         loader = GitHubRepositoryLoader(self.github)
         indexer = RepositoryIndexer(CodeChunker(), embeddings, self.vectors)
@@ -132,7 +133,10 @@ class ReviewProcessor:
             repository_files=repository_files,
             static_findings=static_findings,
         )
-        verifier = VerifierAgent(llm)
+        verifier = VerifierAgent(
+            DecisionsClient(self.settings),
+            minimum_probability=self.settings.verification_threshold,
+        )
         verify_started = time.monotonic()
         accepted, verifier_tokens = await verifier.verify(
             review.findings, context=review.retrieved_context, diff=diff

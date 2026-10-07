@@ -18,10 +18,13 @@ class Settings(BaseSettings):
     github_private_key_path: Path | None = None
     github_webhook_secret: SecretStr | None = None
     github_api_url: str = "https://api.github.com"
-    openai_api_key: SecretStr | None = None
-    openai_base_url: str = "https://api.openai.com/v1"
-    llm_model: str = "gpt-4o-mini"
-    embedding_model: str = "text-embedding-3-small"
+    openrouter_api_key: SecretStr | None = None
+    openrouter_base_url: str = "https://openrouter.ai"
+    openrouter_site_url: str | None = None
+    openrouter_app_name: str = "GitHub PR Review Agent"
+    llm_model: str = "openai/gpt-4o-mini"
+    decisions_model: str = "openai/gpt-6-luna-decisions"
+    embedding_model: str = "openai/text-embedding-3-small"
     embedding_dimensions: int = Field(default=1536, gt=0)
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "repository_chunks"
@@ -29,6 +32,7 @@ class Settings(BaseSettings):
     top_k: int = Field(default=8, gt=0, le=50)
     confidence_threshold: float = Field(default=0.80, ge=0, le=1)
     summary_confidence_threshold: float = Field(default=0.60, ge=0, le=1)
+    verification_threshold: float = Field(default=0.80, ge=0, le=1)
     worker_poll_seconds: float = Field(default=2, gt=0)
     max_retries: int = Field(default=3, ge=0)
     cost_per_million_tokens: float | None = Field(default=None, ge=0)
@@ -39,7 +43,7 @@ class Settings(BaseSettings):
         "github_app_id",
         "github_private_key_path",
         "github_webhook_secret",
-        "openai_api_key",
+        "openrouter_api_key",
         "cost_per_million_tokens",
         mode="before",
     )

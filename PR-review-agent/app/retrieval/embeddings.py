@@ -1,4 +1,4 @@
-"""Embedding provider contracts and cached OpenAI-compatible embeddings."""
+"""Embedding provider contracts and cached OpenRouter embeddings."""
 
 import hashlib
 import json
@@ -6,13 +6,29 @@ import math
 import re
 import time
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from typing import Protocol
 
 import httpx
 
 from app.config import Settings
 from app.database.session import Database
+
+
+@asynccontextmanager
+async def _http_client(
+    client: httpx.AsyncClient | None,
+    timeout: httpx.Timeout,
+    default_headers: dict[str, str],
+) -> AsyncIterator[httpx.AsyncClient]:
+    """Yield an injected HTTP client or a request-scoped client."""
+    if client is not None:
+        client.headers.update(default_headers)
+        yield client
+    else:
+        async with httpx.AsyncClient(timeout=timeout, headers=default_headers) as owned_client:
+            yield owned_client
 
 
 class EmbeddingProvider(Protocol):
@@ -29,15 +45,22 @@ class EmbeddingError(RuntimeError):
     pass
 
 
-class OpenAIEmbeddingProvider:
-    """Fetch and cache vectors from an OpenAI-compatible embeddings endpoint."""
+class OpenRouterEmbeddingProvider:
+    """Fetch and cache vectors through OpenRouter's embeddings endpoint."""
 
-    def __init__(self, settings: Settings, database: Database) -> None:
-        if settings.openai_api_key is None:
-            raise ValueError("OPENAI_API_KEY is required for OpenAI embeddings")
+    def __init__(
+        self,
+        settings: Settings,
+        database: Database,
+        *,
+        http_client: httpx.AsyncClient | None = None,
+    ) -> None:
+        if settings.openrouter_api_key is None:
+            raise ValueError("OPENROUTER_API_KEY is required for hosted embeddings")
         self.settings = settings
-        self.api_key = settings.openai_api_key.get_secret_value()
+        self.api_key = settings.openrouter_api_key.get_secret_value()
         self.database = database
+        self.http_client = http_client
         self.total_latency_seconds = 0.0
         self.total_tokens = 0
 
@@ -61,9 +84,13 @@ class OpenAIEmbeddingProvider:
             batch = missing[batch_start : batch_start + 64]
             started = time.monotonic()
             try:
-                async with httpx.AsyncClient(timeout=httpx.Timeout(45, connect=10)) as client:
+                async with _http_client(
+                    self.http_client,
+                    httpx.Timeout(45, connect=10),
+                    self._attribution_headers(),
+                ) as client:
                     response = await client.post(
-                        f"{self.settings.openai_base_url.rstrip('/')}/embeddings",
+                        f"{self.settings.openrouter_base_url.rstrip('/')}/api/v1/embeddings",
                         headers={"Authorization": f"Bearer {self.api_key}"},
                         json={
                             "model": self.settings.embedding_model,
@@ -102,6 +129,13 @@ class OpenAIEmbeddingProvider:
     def _cache_key(self, text: str) -> str:
         """Create a stable key for a normalized embedding request."""
         return hashlib.sha256(f"{self.settings.embedding_model}\0{text}".encode()).hexdigest()
+
+    def _attribution_headers(self) -> dict[str, str]:
+        """Return optional application attribution headers supported by OpenRouter."""
+        headers = {"X-OpenRouter-Title": self.settings.openrouter_app_name}
+        if self.settings.openrouter_site_url:
+            headers["HTTP-Referer"] = self.settings.openrouter_site_url
+        return headers
 
 
 class LocalFeatureEmbeddingProvider:
