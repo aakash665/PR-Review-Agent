@@ -8,23 +8,15 @@ function escapeText(value) {
 }
 
 async function api(path, options = {}) {
-  const token = localStorage.getItem("reviewops_dashboard_key");
   const response = await fetch(path, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers || {}),
     },
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    if (response.status === 401) {
-      localStorage.removeItem("reviewops_dashboard_key");
-      showAccessDialog(payload.detail || "Dashboard authentication required");
-    }
-    throw new Error(payload.detail || `Request failed (${response.status})`);
-  }
+  if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`);
   return payload;
 }
 
@@ -32,11 +24,6 @@ function setServiceStatus(healthy, text) {
   const label = byId("service-status");
   label.textContent = text;
   label.previousElementSibling.style.background = healthy ? "var(--green)" : "var(--red)";
-}
-
-function showAccessDialog(message = "") {
-  byId("access-error").textContent = message;
-  if (!byId("access-dialog").open) byId("access-dialog").showModal();
 }
 
 function showToast(message) {
@@ -247,26 +234,12 @@ async function refresh() {
     setServiceStatus(true, "Connected");
   } catch (error) {
     setServiceStatus(false, "API unavailable");
-    if (!localStorage.getItem("reviewops_dashboard_key")) {
-      showAccessDialog(error.message);
-    }
+    showToast(`Could not load dashboard: ${error.message}`);
   } finally {
     state.busy = false;
-    if (localStorage.getItem("reviewops_dashboard_key")) {
-      window.setTimeout(refresh, 5000);
-    }
+    window.setTimeout(refresh, 5000);
   }
 }
-
-byId("dashboard-access").addEventListener("click", () => showAccessDialog());
-byId("close-access").addEventListener("click", () => byId("access-dialog").close());
-byId("access-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  localStorage.setItem("reviewops_dashboard_key", byId("access-key").value);
-  byId("access-key").value = "";
-  byId("access-dialog").close();
-  await refresh();
-});
 
 function openRepositoryDialog() {
   byId("form-error").textContent = "";

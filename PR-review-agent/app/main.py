@@ -5,11 +5,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.auth import require_dashboard_access
 from app.api.github_webhooks import router as webhook_router
 from app.api.repositories import router as repositories_router
 from app.api.reviews import router as reviews_router
@@ -56,7 +55,7 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/metrics", dependencies=[Depends(require_dashboard_access)])
+@app.get("/metrics")
 async def metrics() -> dict[str, int | float]:
     """Expose aggregate review-job metrics from the durable job repository."""
     jobs: JobRepository | None = getattr(app.state, "jobs", None)

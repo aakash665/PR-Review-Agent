@@ -2,10 +2,9 @@
 
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from app.api.auth import require_dashboard_access
 from app.config import Settings
 from app.database.repositories import JobRepository
 from app.github.client import GitHubAPIError, GitHubClient
@@ -29,7 +28,6 @@ class ManualReviewRequest(BaseModel):
 @router.get("")
 async def list_repositories(
     request: Request,
-    _: None = Depends(require_dashboard_access),
 ) -> list[dict[str, object]]:
     """Return registered repositories and their aggregate review counts."""
     jobs: JobRepository = request.app.state.jobs
@@ -40,7 +38,6 @@ async def list_repositories(
 async def register_repository(
     registration: RepositoryRegistration,
     request: Request,
-    _: None = Depends(require_dashboard_access),
 ) -> dict[str, object]:
     """Validate GitHub App access and persist a repository for webhook reviews."""
     settings: Settings = request.app.state.settings
@@ -85,7 +82,6 @@ async def enqueue_manual_review(
     repository_id: int,
     body: ManualReviewRequest,
     request: Request,
-    _: None = Depends(require_dashboard_access),
 ) -> dict[str, int | bool]:
     """Fetch the authoritative pull-request head and queue it for the worker."""
     repository = request.app.state.jobs.repository(repository_id)

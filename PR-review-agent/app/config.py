@@ -25,7 +25,6 @@ class Settings(BaseSettings):
     github_app_id: str | None = None
     github_private_key_path: Path | None = None
     github_webhook_secret: SecretStr | None = None
-    dashboard_api_key: SecretStr | None = None
     github_api_url: str = "https://api.github.com"
     openrouter_api_key: SecretStr | None = None
     openrouter_base_url: str = "https://openrouter.ai"
@@ -52,7 +51,6 @@ class Settings(BaseSettings):
         "github_app_id",
         "github_private_key_path",
         "github_webhook_secret",
-        "dashboard_api_key",
         "openrouter_api_key",
         "cost_per_million_tokens",
         mode="before",

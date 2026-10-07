@@ -31,7 +31,7 @@ flowchart TD
 
 - HMAC-SHA256 webhook verification, bounded payloads, supported pull-request actions, and idempotent `(PR, head SHA)` job creation.
 - Same-origin dashboard for registering App-accessible repositories, queueing PR reviews, and live-polling job state, summaries, findings, evidence, and metrics.
-- Bearer-key protection for dashboard, repository management, review result, and metrics APIs; GitHub webhooks continue to authenticate with their independent HMAC signature.
+- Public same-origin dashboard, repository management, review result, and metrics APIs; GitHub webhooks continue to authenticate with their independent HMAC signature.
 - A separate durable SQLite job worker. Webhook requests return `202`; model and GitHub work happens outside the request.
 - GitHub App JWT and installation-token authentication, authoritative PR/diff retrieval, archive-based initial indexing, and bounded incremental changed-file indexing.
 - Python AST and Tree-sitter declaration parsing, parent/import-aware chunks, Markdown section chunking, generated/binary/lock-file exclusions, and content-addressed embeddings.
@@ -61,7 +61,9 @@ Set `OPENROUTER_API_KEY` and the GitHub App settings in `.env`. Do not commit `.
 docker compose up --build
 ```
 
-The dashboard is at `http://localhost:8000`; interactive API docs are at `/docs`. Generate a long random bearer key (for example, `python -c "import secrets; print(secrets.token_urlsafe(32))"`), set it as `DASHBOARD_API_KEY` in `.env`, and enter the same key into the dashboard when prompted. SQLite data is written under `data/` locally and the named Docker volume in Compose. The worker shares the same database and processes queued jobs.
+The dashboard is at `http://localhost:8000`; interactive API docs are at `/docs`. The dashboard and management APIs are public and do not require a browser key. Configure `OPENROUTER_API_KEY` and GitHub App credentials only in the backend environment; never expose provider credentials in frontend code. SQLite data is written under `data/` locally and the named Docker volume in Compose. The worker shares the same database and processes queued jobs.
+
+For Vercel, add the OpenRouter key as a server-side environment variable with `vercel env add OPENROUTER_API_KEY production`, enter the value at the CLI prompt, and redeploy. Do not use a `NEXT_PUBLIC_` or `VITE_` variable name for secrets.
 
 Useful local checks and the no-GitHub demo:
 
@@ -80,8 +82,8 @@ With no OpenRouter key the fixture command accurately reports that it ran reposi
 3. Generate and securely store the App's private key. Set `GITHUB_APP_ID` and `GITHUB_PRIVATE_KEY_PATH` to the App ID and key file path.
 4. Install the App on a test repository (or select specific repositories during installation). Repository access is constrained by the installation token.
 5. For local delivery, expose port 8000 with [ngrok](https://ngrok.com/) or another HTTPS tunnel, then set the App's webhook URL to `https://<your-tunnel>/webhooks/github`.
-6. Set `DASHBOARD_API_KEY`, `OPENROUTER_API_KEY`, `LLM_MODEL`, `DECISIONS_MODEL`, `EMBEDDING_MODEL`, and `QDRANT_URL`; start the API and worker with `docker compose up --build`.
-7. Open the dashboard, enter `DASHBOARD_API_KEY`, and connect a repository already installed on the GitHub App. The dashboard validates the installation before storing the repository.
+6. Set `OPENROUTER_API_KEY`, `LLM_MODEL`, `DECISIONS_MODEL`, `EMBEDDING_MODEL`, and `QDRANT_URL` in the backend environment; start the API and worker with `docker compose up --build`.
+7. Open the public dashboard and connect a repository already installed on the GitHub App. The dashboard validates the installation before storing the repository.
 8. Configure the App webhook URL and open or update a test PR. The webhook returns `202`; the worker reviews it and the dashboard reflects queued/running/completed state and findings. The dashboard also lets you queue a PR manually.
 
 For Docker, put the PEM file at `secrets/github-app.pem` (the `secrets/` directory is mounted read-only into the containers). Do not put the key in an image, source control, or logs. Supply the remaining environment variables through the invoking shell or a local `.env`; Compose intentionally does not require a checked-in secrets file.
@@ -111,7 +113,6 @@ See [.env.example](./.env.example). Important settings:
 | `DATABASE_PATH` | SQLite database file; defaults to `/tmp/reviews.sqlite3` on Vercel and `data/reviews.sqlite3` elsewhere |
 | `GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY_PATH` | GitHub App authentication |
 | `GITHUB_WEBHOOK_SECRET` | Webhook HMAC verification |
-| `DASHBOARD_API_KEY` | Bearer key required for dashboard data and management APIs |
 | `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL` | OpenRouter authentication and API origin |
 | `OPENROUTER_SITE_URL`, `OPENROUTER_APP_NAME` | Optional OpenRouter app attribution headers |
 | `LLM_MODEL` | OpenRouter chat model used for review and summary generation |
@@ -138,6 +139,7 @@ Retrieval filters by repository **and exact commit SHA** before Qdrant vector se
 
 ## Security and operational notes
 
+- The dashboard and repository/review/metrics APIs are intentionally public: anyone who can reach the deployment can list review data, connect repositories accessible to the configured GitHub App, and queue reviews. Deploy only when this exposure is acceptable; use network-level access controls or add user authentication before exposing sensitive/private repositories.
 - Repository contents, including code comments and documentation, are untrusted prompt data. They are explicitly fenced/escaped and the system policy forbids following repository instructions.
 - The pipeline never executes repository build scripts. Static-analysis tools are invoked without a shell; Ruff is isolated, ESLint is run without project configuration, and Semgrep uses local rules.
 - API credentials are read from environment-backed settings; tokens and source contents are not included in structured completion logs.
@@ -148,6 +150,6 @@ Retrieval filters by repository **and exact commit SHA** before Qdrant vector se
 
 ## Tests and evaluation
 
-`tests/` exercises webhook signatures, durable idempotency, dashboard authorization and APIs, diff line mapping, parsers/chunking, vector retrieval, confidence filtering, Decisions API probability validation, deduplication, publisher formatting, and fixture metrics. GitHub/OpenRouter HTTP calls are mocked in tests. Qdrant tests use its in-memory client; a running external service is not needed for unit tests.
+`tests/` exercises webhook signatures, durable idempotency, public dashboard APIs, diff line mapping, parsers/chunking, vector retrieval, confidence filtering, Decisions API probability validation, deduplication, publisher formatting, and fixture metrics. GitHub/OpenRouter HTTP calls are mocked in tests. Qdrant tests use its in-memory client; a running external service is not needed for unit tests.
 
 The evaluation fixtures contain known bug/security examples plus repository conventions and tests. `evaluation/metrics.py` can also be used with a custom expected/actual dataset. Evaluation outputs are printed as JSON; no quality score is fabricated when the review model is not configured.

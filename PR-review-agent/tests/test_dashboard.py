@@ -1,11 +1,10 @@
-"""Dashboard API authentication, repository management, and review status tests."""
+"""Public dashboard API, repository management, and review status tests."""
 
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
 
 from app.api.repositories import router as repositories_router
 from app.api.reviews import router as reviews_router
@@ -57,7 +56,6 @@ def _application(tmp_path: Path) -> tuple[FastAPI, JobRepository]:
     jobs = JobRepository(database)
     application = FastAPI()
     application.state.settings = Settings.model_construct(
-        dashboard_api_key=SecretStr("test-dashboard-secret"),
         github_app_id="123",
         github_private_key_path=tmp_path / "github.pem",
     )
@@ -67,34 +65,22 @@ def _application(tmp_path: Path) -> tuple[FastAPI, JobRepository]:
     return application, jobs
 
 
-def test_dashboard_api_requires_bearer_key(tmp_path: Path) -> None:
+def test_dashboard_apis_are_public_without_a_browser_key(tmp_path: Path) -> None:
     application, _ = _application(tmp_path)
     with TestClient(application) as client:
-        assert client.get("/repositories").status_code == 401
-        assert client.get("/reviews").status_code == 401
-        assert (
-            client.get("/repositories", headers={"Authorization": "Bearer wrong"}).status_code
-            == 401
-        )
-        authorized = client.get(
-            "/repositories", headers={"Authorization": "Bearer test-dashboard-secret"}
-        )
-        assert authorized.status_code == 200
-        assert authorized.json() == []
+        assert client.get("/repositories").status_code == 200
+        assert client.get("/repositories").json() == []
+        assert client.get("/reviews").status_code == 200
 
 
-def test_dashboard_registers_app_accessible_repository_and_queues_pr(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_public_dashboard_registers_repository_and_queues_pr(tmp_path: Path, monkeypatch) -> None:
     import app.api.repositories as repositories_api
 
     monkeypatch.setattr(repositories_api, "GitHubClient", FakeGitHub)
     application, jobs = _application(tmp_path)
-    authorization = {"Authorization": "Bearer test-dashboard-secret"}
     with TestClient(application) as client:
         registered = client.post(
             "/repositories",
-            headers=authorization,
             json={"full_name": "octo/demo"},
         )
         assert registered.status_code == 201
@@ -103,19 +89,18 @@ def test_dashboard_registers_app_accessible_repository_and_queues_pr(
             "github_repo_id": 321,
             "default_branch": "main",
         }
-        repository_id = client.get("/repositories", headers=authorization).json()[0]["id"]
+        repository_id = client.get("/repositories").json()[0]["id"]
         queued = client.post(
             f"/repositories/{repository_id}/reviews",
-            headers=authorization,
             json={"pr_number": 7},
         )
         assert queued.status_code == 202
         assert queued.json() == {"job_id": 1, "queued": True}
-        reviews = client.get("/reviews", headers=authorization).json()
+        reviews = client.get("/reviews").json()
         assert reviews["total"] == 1
         assert reviews["items"][0]["title"] == "Improve service validation"
         assert reviews["items"][0]["head_branch"] == "feature"
-        detail = client.get("/reviews/1", headers=authorization)
+        detail = client.get("/reviews/1")
         assert detail.status_code == 200
         assert detail.json()["job"]["status"] == "queued"
     assert jobs.list_repositories()[0]["reviews"] == 1
@@ -149,8 +134,10 @@ def test_dashboard_static_assets_are_served(tmp_path: Path) -> None:
         dashboard = client.get("/")
         javascript = client.get("/static/app.js")
         stylesheet = client.get("/static/styles.css")
+        metrics = client.get("/metrics")
     assert dashboard.status_code == 200
     assert "Pull request reviews" in dashboard.text
     assert javascript.status_code == 200
-    assert "reviewops_dashboard_key" in javascript.text
+    assert "reviewops_dashboard_key" not in javascript.text
     assert stylesheet.status_code == 200
+    assert metrics.status_code == 200

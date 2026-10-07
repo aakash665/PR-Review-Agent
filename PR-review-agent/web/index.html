@@ -33,7 +33,6 @@
             <h1>Pull request reviews</h1>
           </div>
           <div class="topbar-actions">
-            <button class="button button-secondary" id="dashboard-access">Access key</button>
             <span class="live-indicator"><span class="pulse"></span> Live updates</span>
             <button class="button button-primary" id="add-repository-top">＋ Add repository</button>
           </div>
@@ -88,16 +87,6 @@
         <input id="repository-name" name="full_name" placeholder="owner/repository" pattern="[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+" required autocomplete="off">
         <div class="form-error" id="form-error" role="alert"></div>
         <div class="dialog-actions"><button class="button button-secondary" type="button" id="cancel-dialog">Cancel</button><button class="button button-primary" type="submit" id="submit-repository">Connect repository</button></div>
-      </form>
-    </dialog>
-    <dialog id="access-dialog">
-      <form id="access-form">
-        <div class="dialog-heading"><div><div class="eyebrow">PRIVATE WORKSPACE</div><h2>Dashboard access</h2></div><button class="icon-button" type="button" id="close-access" aria-label="Close">×</button></div>
-        <p class="dialog-copy">Enter the dashboard key configured by the service administrator. It is stored only in this browser.</p>
-        <label for="access-key">Dashboard API key</label>
-        <input id="access-key" type="password" autocomplete="current-password" required>
-        <div class="form-error" id="access-error" role="alert"></div>
-        <div class="dialog-actions"><button class="button button-primary" type="submit" id="submit-access">Unlock dashboard</button></div>
       </form>
     </dialog>
     <div class="toast" id="toast" role="status"></div>

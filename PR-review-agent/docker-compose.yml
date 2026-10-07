@@ -12,7 +12,6 @@ services:
       GITHUB_PRIVATE_KEY_PATH: /run/secrets/github-app.pem
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
       GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
-      DASHBOARD_API_KEY: ${DASHBOARD_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai}
       OPENROUTER_SITE_URL: ${OPENROUTER_SITE_URL:-}
@@ -50,7 +49,6 @@ services:
       GITHUB_PRIVATE_KEY_PATH: /run/secrets/github-app.pem
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
       GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
-      DASHBOARD_API_KEY: ${DASHBOARD_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai}
       OPENROUTER_SITE_URL: ${OPENROUTER_SITE_URL:-}
